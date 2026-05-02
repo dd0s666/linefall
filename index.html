@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>LineFall</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #0d0d1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* ── Top HUD ── */
+#hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: var(--gw);
+  margin-bottom: 8px;
+  gap: 6px;
+}
+.hud-box {
+  background: #16213e;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  padding: 4px 10px;
+  text-align: center;
+  flex: 1;
+}
+.hud-label { font-size: 9px; color: #6666aa; text-transform: uppercase; letter-spacing: 1.5px; }
+.hud-val   { font-size: 18px; font-weight: bold; line-height: 1.2; }
+#timerBox  { flex: 1.2; }
+#timerVal  { font-size: 22px; color: #2ecc71; font-variant-numeric: tabular-nums; transition: color 0.4s; }
+#timerVal.warn   { color: #f39c12; }
+#timerVal.danger { color: #e74c3c; animation: pulse 0.5s ease-in-out infinite alternate; }
+#movesVal { color: #2ecc71; transition: color 0.4s; }
+#movesVal.warn   { color: #f39c12; }
+#movesVal.danger { color: #e74c3c; animation: pulse 0.5s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity:1 } to { opacity:0.5 } }
+#levelVal  { color: #f5a623; }
+#scoreVal  { color: #fff; }
+#bestVal   { color: #aaa; font-size: 14px; }
+
+/* ── Progress bar (score to next level) ── */
+#progressWrap {
+  width: var(--gw);
+  height: 6px;
+  background: #1a1a2e;
+  border-radius: 3px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+#progressBar {
+  height: 100%;
+  background: linear-gradient(90deg, #f5a623, #ff6b6b);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+/* ── Canvas ── */
+canvas {
+  display: block;
+  cursor: grab;
+  border-radius: 10px;
+  box-shadow: 0 0 40px #f5a62322, 0 0 1px #f5a62444;
+  touch-action: none;
+}
+canvas.dragging { cursor: grabbing; }
+
+/* ── Bottom bar ── */
+#bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: var(--gw);
+  margin-top: 8px;
+  height: 28px;
+}
+#comboBar {
+  font-size: 13px;
+  font-weight: bold;
+  color: #f5a623;
+  text-shadow: 0 0 10px #f5a62388;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#comboBar.show { opacity: 1; }
+#msgEl {
+  font-size: 13px;
+  font-weight: bold;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.3s;
+  text-align: right;
+}
+#msgEl.show { opacity: 1; }
+
+/* ── Hint button ── */
+#hintBtn {
+  padding: 4px 14px;
+  background: transparent;
+  border: 1.5px solid #f5a623;
+  border-radius: 6px;
+  color: #f5a623;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+#hintBtn:hover:not(:disabled) { background: #f5a62322; box-shadow: 0 0 10px #f5a62366; }
+#hintBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Legend ── */
+#legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #55557a;
+}
+.leg-item { display: flex; align-items: center; gap: 4px; }
+.leg-dot  { width: 10px; height: 10px; border-radius: 2px; }
+
+/* ── Overlay ── */
+#overlay {
+  position: fixed; inset: 0;
+  background: #0d0d1acc;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+#overlay.show { opacity: 1; pointer-events: all; }
+#overlayBox {
+  background: #16213e;
+  border: 2px solid #f5a623;
+  border-radius: 16px;
+  padding: 30px 40px;
+  text-align: center;
+  max-width: 320px;
+  width: 90vw;
+  box-shadow: 0 0 60px #f5a62344;
+}
+#overlayTitle { font-size: 2rem; font-weight: bold; color: #f5a623; margin-bottom: 8px; }
+#overlayBody  { font-size: 1rem; color: #aaa; margin-bottom: 6px; line-height: 1.6; }
+#overlayScore { font-size: 1.5rem; font-weight: bold; color: #fff; margin: 10px 0; }
+#overlayBest  { font-size: 0.9rem; color: #888; margin-bottom: 16px; }
+.ov-btn {
+  padding: 10px 28px;
+  background: transparent;
+  color: #f5a623;
+  border: 2px solid #f5a623;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: background 0.2s, color 0.2s;
+}
+.ov-btn:hover { background: #f5a623; color: #0d0d1a; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hud-box">
+    <div class="hud-label">Level</div>
+    <div class="hud-val" id="levelVal">1</div>
+  </div>
+  <div class="hud-box" id="timerBox">
+    <div class="hud-label">Time</div>
+    <div class="hud-val" id="timerVal">5:00</div>
+  </div>
+  <div class="hud-box">
+    <div class="hud-label">Moves</div>
+    <div class="hud-val" id="movesVal">20</div>
+  </div>
+  <div class="hud-box">
+    <div class="hud-label">Score</div>
+    <div class="hud-val" id="scoreVal">0</div>
+  </div>
+  <div class="hud-box">
+    <div class="hud-label">Best</div>
+    <div class="hud-val" id="bestVal">0</div>
+  </div>
+</div>
+
+<div id="progressWrap"><div id="progressBar" style="width:0%"></div></div>
+<canvas id="c"></canvas>
+<div id="bottom">
+  <div id="comboBar">COMBO ×<span id="comboNum">1</span></div>
+  <button id="hintBtn">💡 JOKER <span id="hintCostLbl">−500</span></button>
+  <div id="msgEl"></div>
+</div>
+<div id="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:#888;border:1px solid #aaa"></div>Block (use specials!)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#3b9ef0;border:2px solid #fff"></div>Line (4-match)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#e74c3c;border-radius:50%;border:2px solid #fff"></div>Bomb (5-match)</div>
+</div>
+
+<div id="overlay">
+  <div id="overlayBox">
+    <div id="overlayTitle">—</div>
+    <div id="overlayBody"></div>
+    <div id="overlayScore"></div>
+    <div id="overlayBest"></div>
+    <button class="ov-btn" id="overlayBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const COLS = 7, ROWS = 7;
+const T_NORMAL = 0, T_LINE = 1, T_BOMB = 2, T_BLOCK = 3;
+
+const CELL = Math.min(Math.floor((Math.min(window.innerWidth * 0.98, window.innerHeight * 0.7)) / 7), 82);
+const GAP = 4;
+const INNER = CELL - GAP * 2;
+const W = COLS * CELL, H = ROWS * CELL;
+
+document.documentElement.style.setProperty('--gw', W + 'px');
+
+// Glyph colors: [main, glow]
+const COLORS = [
+  ['#e74c3c','#ff7675'],  // 0 red
+  ['#3b9ef0','#74c0fc'],  // 1 blue
+  ['#2ecc71','#55efc4'],  // 2 green
+  ['#f5a623','#ffd43b'],  // 3 gold
+  ['#b06ef0','#cc99f7'],  // 4 purple
+];
+// Shape ids per color
+const SHAPES = [0, 1, 2, 3, 4]; // circle, square, triangle, diamond, star
+
+// Each level: score threshold, how many new blocks spawn when crossing it
+const LEVEL_DATA = [
+  { target: 8000,   newBlocks: 0 },
+  { target: 25000,  newBlocks: 2 },
+  { target: 60000,  newBlocks: 2 },
+  { target: 120000, newBlocks: 3 },
+  { target: 200000, newBlocks: 3 },
+];
+const MAX_LEVEL = LEVEL_DATA.length;
+const TOTAL_TIME = 300; // seconds
+
+// ═══════════════════════════════════════════════════════════════
+// CANVAS
+// ═══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = W; canvas.height = H;
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let grid;        // [ROWS][COLS] → {g, t, ld} or null
+let score, best, combo, level, timeLeft, possibleMoves;
+let phase;       // 'play'|'snap'|'match'|'fall'|'gameover'
+let phaseStart, phaseDur;
+let lastTime;    // for timer delta
+let snapRejected = false; // true when a snap-back is due to no match
+let hint = null;           // { axis, idx, dir, start } — active hint
+const HINT_COST = 500;
+
+// drag
+let drag = { on:false, r:0, c:0, axis:null, ox:0, oy:0, off:0 };
+
+// snap anim
+let snap = { axis:null, idx:0, from:0, to:0 };
+
+// match anim
+let matchCells = new Set();   // keys to animate/destroy
+let creations  = [];          // [{key, t, ld, color}] specials to create after match
+
+// fall anim data [col] → [{r, glyph_obj, fromY, toY}]
+let fallData = [];
+
+// particles
+let particles = [];
+
+// shake (for blocked drag attempt)
+let shake = { on:false, axis:null, idx:0, t:0 };
+
+// bonus time popup
+let bonusPopup = null; // {text, x, y, life}
+
+// ─── helpers ────────────────────────────────────────────────────
+const rc2k  = (r, c) => r * COLS + c;
+const k2r   = k => (k / COLS) | 0;
+const k2c   = k => k % COLS;
+const inBounds = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
+
+// ═══════════════════════════════════════════════════════════════
+// UI REFS
+// ═══════════════════════════════════════════════════════════════
+const levelEl    = document.getElementById('levelVal');
+const timerEl    = document.getElementById('timerVal');
+const movesEl    = document.getElementById('movesVal');
+const scoreEl    = document.getElementById('scoreVal');
+const bestEl     = document.getElementById('bestVal');
+const progressEl = document.getElementById('progressBar');
+const comboBar   = document.getElementById('comboBar');
+const comboNumEl = document.getElementById('comboNum');
+const msgEl      = document.getElementById('msgEl');
+const overlay    = document.getElementById('overlay');
+const ovTitle    = document.getElementById('overlayTitle');
+const ovBody     = document.getElementById('overlayBody');
+const ovScore    = document.getElementById('overlayScore');
+const ovBest     = document.getElementById('overlayBest');
+const ovBtn      = document.getElementById('overlayBtn');
+
+let msgTimer = null, comboTimer = null;
+
+function updateHUD() {
+  levelEl.textContent = level;
+  scoreEl.textContent = score.toLocaleString();
+  bestEl.textContent  = best.toLocaleString();
+  const ld = LEVEL_DATA[Math.min(level - 1, MAX_LEVEL - 1)];
+  const prev = level > 1 ? LEVEL_DATA[level-2].target : 0;
+  const pct = Math.min(100, ((score - prev) / (ld.target - prev)) * 100);
+  progressEl.style.width = Math.max(0, pct) + '%';
+
+  const display = Math.ceil(timeLeft);
+  const m = (display / 60) | 0;
+  const s = display % 60;
+  timerEl.textContent = m + ':' + String(s).padStart(2, '0');
+  timerEl.classList.toggle('warn',   timeLeft <= 60 && timeLeft > 20);
+  timerEl.classList.toggle('danger', timeLeft <= 20);
+  movesEl.textContent = possibleMoves;
+  movesEl.classList.toggle('warn',   possibleMoves <= 5 && possibleMoves > 2);
+  movesEl.classList.toggle('danger', possibleMoves <= 2);
+}
+
+function showMsg(text, dur = 1400) {
+  msgEl.textContent = text;
+  msgEl.classList.add('show');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => msgEl.classList.remove('show'), dur);
+}
+
+function showCombo(n) {
+  if (n <= 1) { comboBar.classList.remove('show'); return; }
+  comboNumEl.textContent = n;
+  comboBar.classList.add('show');
+  clearTimeout(comboTimer);
+  comboTimer = setTimeout(() => comboBar.classList.remove('show'), 2500);
+}
+
+function showOverlay(title, body, scoreTxt, bestTxt) {
+  ovTitle.textContent = title;
+  ovBody.textContent  = body;
+  ovScore.textContent = scoreTxt;
+  ovBest.textContent  = bestTxt;
+  overlay.classList.add('show');
+}
+
+function hideOverlay() { overlay.classList.remove('show'); }
+
+// ═══════════════════════════════════════════════════════════════
+// GRID INIT
+// ═══════════════════════════════════════════════════════════════
+function newGame() {
+  best = parseInt(localStorage.getItem('linefall_best') || '0');
+  score = 0; combo = 1; level = 1; timeLeft = TOTAL_TIME; possibleMoves = 0;
+  hint = null;
+  lastTime = null;
+  phase = 'play'; phaseStart = null; particles = [];
+  drag.on = false;
+  hideOverlay();
+  buildLevel();
+  possibleMoves = countPossibleMoves();
+  updateHUD();
+}
+
+function buildLevel() {
+  const ld = LEVEL_DATA[Math.min(level - 1, MAX_LEVEL - 1)];
+  // build grid with no initial matches
+  do { initGrid(); } while (findAllRuns().length > 0);
+  // place blocks: level 1 = 0 blocks, level 2 = 1, etc.
+  placeBlocks(level - 1);
+  snap = {}; matchCells = new Set(); creations = []; fallData = [];
+  shake.on = false; particles = [];
+}
+
+function initGrid() {
+  grid = Array.from({ length: ROWS }, () =>
+    Array.from({ length: COLS }, () => ({ g: (Math.random() * 5) | 0, t: T_NORMAL, ld: null }))
+  );
+}
+
+function placeBlocks(count) {
+  let placed = 0, tries = 0;
+  while (placed < count && tries < 300) {
+    tries++;
+    const r = (Math.random() * ROWS) | 0;
+    const c = (Math.random() * COLS) | 0;
+    if (grid[r][c].t === T_BLOCK) continue;
+    // don't block ALL cells in a row/col
+    const rowBlocks = grid[r].filter(x => x.t === T_BLOCK).length;
+    const colBlocks = grid.map(row => row[c]).filter(x => x.t === T_BLOCK).length;
+    if (rowBlocks >= COLS - 2 || colBlocks >= ROWS - 2) continue;
+    grid[r][c] = { g: -1, t: T_BLOCK, ld: null };
+    placed++;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MATCH LOGIC
+// ═══════════════════════════════════════════════════════════════
+function findAllRuns() {
+  const runs = [];
+
+  // horizontal
+  for (let r = 0; r < ROWS; r++) {
+    let start = 0;
+    for (let c = 0; c <= COLS; c++) {
+      const prev = c > 0 ? grid[r][c-1] : null;
+      const curr = c < COLS ? grid[r][c] : null;
+      const cont = prev && curr && prev.t !== T_BLOCK && curr.t !== T_BLOCK
+                   && prev.g === curr.g && prev.g !== -1;
+      if (!cont) {
+        const len = c - start;
+        if (len >= 3) {
+          const cells = [];
+          for (let k = start; k < c; k++) cells.push(rc2k(r, k));
+          runs.push({ cells, color: grid[r][start].g, dir: 'h', len });
+        }
+        start = c;
+      }
+    }
+  }
+
+  // vertical
+  for (let c = 0; c < COLS; c++) {
+    let start = 0;
+    for (let r = 0; r <= ROWS; r++) {
+      const prev = r > 0 ? grid[r-1][c] : null;
+      const curr = r < ROWS ? grid[r][c] : null;
+      const cont = prev && curr && prev.t !== T_BLOCK && curr.t !== T_BLOCK
+                   && prev.g === curr.g && prev.g !== -1;
+      if (!cont) {
+        const len = r - start;
+        if (len >= 3) {
+          const cells = [];
+          for (let k = start; k < r; k++) cells.push(rc2k(k, c));
+          runs.push({ cells, color: grid[start][c].g, dir: 'v', len });
+        }
+        start = r;
+      }
+    }
+  }
+
+  return runs;
+}
+
+function resolveMatches() {
+  const runs = findAllRuns();
+  if (!runs.length) return false;
+
+  const toDestroy = new Set();
+  const pendingCreations = [];
+
+  // Collect base match cells & plan creations
+  for (const run of runs) {
+    for (const key of run.cells) toDestroy.add(key);
+
+    // Plan special creation at center of qualifying run
+    // Only create if the run has mostly normal cells (not existing specials)
+    const normalCnt = run.cells.filter(k => grid[k2r(k)][k2c(k)].t === T_NORMAL).length;
+    const midKey = run.cells[run.cells.length >> 1];
+
+    if (run.len >= 5 && normalCnt >= 4) {
+      pendingCreations.push({ key: midKey, t: T_BOMB, color: run.color, ld: null });
+    } else if (run.len === 4 && normalCnt >= 3) {
+      pendingCreations.push({ key: midKey, t: T_LINE, color: run.color, ld: run.dir });
+    }
+  }
+
+  // Trigger specials within matched cells (with chain reaction)
+  const specialSeen = new Set();
+  const specialQueue = [];
+
+  for (const key of toDestroy) {
+    const cell = grid[k2r(key)][k2c(key)];
+    if ((cell.t === T_LINE || cell.t === T_BOMB) && !specialSeen.has(key))
+      specialQueue.push({ key, t: cell.t, ld: cell.ld });
+  }
+
+  while (specialQueue.length) {
+    const { key, t, ld } = specialQueue.shift();
+    if (specialSeen.has(key)) continue;
+    specialSeen.add(key);
+    const r = k2r(key), c = k2c(key);
+    const area = [];
+
+    if (t === T_LINE) {
+      if (ld === 'h') for (let cc = 0; cc < COLS; cc++) area.push(rc2k(r, cc));
+      else            for (let rr = 0; rr < ROWS; rr++) area.push(rc2k(rr, c));
+    } else { // bomb — 3×3
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+          if (inBounds(r+dr, c+dc)) area.push(rc2k(r+dr, c+dc));
+    }
+
+    for (const k of area) {
+      toDestroy.add(k);
+      const nc = grid[k2r(k)][k2c(k)];
+      if ((nc.t === T_LINE || nc.t === T_BOMB) && !specialSeen.has(k))
+        specialQueue.push({ key: k, t: nc.t, ld: nc.ld });
+    }
+  }
+
+  // Finalize creations: a creation position must not be re-destroyed by a chain
+  creations = [];
+  for (const cr of pendingCreations) {
+    toDestroy.delete(cr.key); // "protect" it
+    creations.push(cr);
+  }
+  // Re-add if chain special hit it (check if any chain would have added it back)
+  // Simplification: if position was in specialSeen area it stays destroyed
+  // We re-add positions that were in chain areas
+  for (const cr of [...creations]) {
+    if (specialSeen.size > 0) {
+      // Check if cr.key was destroyed by a chain by seeing if it's in toDestroy
+      // (we deleted it, so we need to check original chain coverage)
+      // Simpler: just let the creation override; it's the natural feel
+    }
+  }
+
+  matchCells = toDestroy;
+
+  // Scoring
+  const matchCount = [...toDestroy].filter(k => grid[k2r(k)][k2c(k)].t !== T_BLOCK).length;
+  const pts = matchCount * 100 * combo;
+  score += pts;
+  if (score > best) { best = score; localStorage.setItem('linefall_best', best); }
+  combo++;
+  showCombo(combo - 1);
+
+  const comboPhrases = ['','','Nice!','Great!','Awesome!','Superb!','Insane!','GODLIKE!'];
+  const phrase = comboPhrases[Math.min(combo - 1, comboPhrases.length - 1)] || 'GODLIKE!';
+  if (combo > 2) showMsg(phrase + ' ×' + (combo-1));
+  else showMsg('+' + pts);
+
+  updateHUD();
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GRID MUTATION
+// ═══════════════════════════════════════════════════════════════
+function applyMatch() {
+  // Destroy matched cells
+  for (const key of matchCells) {
+    grid[k2r(key)][k2c(key)] = { g: -1, t: T_NORMAL, ld: null };
+  }
+  // Apply creations
+  for (const cr of creations) {
+    grid[k2r(cr.key)][k2c(cr.key)] = { g: cr.color, t: cr.t, ld: cr.ld };
+  }
+
+  // Burst particles for destroyed cells
+  for (const key of matchCells) {
+    const r = k2r(key), c = k2c(key);
+    // we destroyed the cell already, but we know color from... let's use run info
+    // Actually record colors before clearing — done above at wrong order
+  }
+}
+
+function applyMatchWithParticles() {
+  // Burst before clearing
+  for (const key of matchCells) {
+    const r = k2r(key), c = k2c(key);
+    const cell = grid[r][c];
+    if (cell.t !== T_BLOCK && cell.g >= 0) {
+      burst(c * CELL + CELL/2, r * CELL + CELL/2, COLORS[cell.g][1]);
+    }
+  }
+  applyMatch();
+}
+
+function buildFallData() {
+  fallData = [];
+  for (let c = 0; c < COLS; c++) {
+    const col = [];
+    const column = grid.map(row => row[c]);
+    // separate non-empty (blocks stay, empty rises)
+    const blocks = column.map((cell, r) => cell.t === T_BLOCK ? { r, cell } : null).filter(Boolean);
+    const nonEmpty = column.filter(cell => cell.t !== T_BLOCK && cell.g !== -1);
+
+    // Blocks stay fixed; non-block cells fall to fill non-block rows from bottom
+    const nonBlockRows = [];
+    for (let r = 0; r < ROWS; r++) if (column[r].t !== T_BLOCK) nonBlockRows.push(r);
+
+    const newCount = nonBlockRows.length - nonEmpty.length;
+    const newGlyphs = Array.from({ length: newCount }, () =>
+      ({ g: (Math.random() * 5) | 0, t: T_NORMAL, ld: null })
+    );
+    const filled = [...newGlyphs, ...nonEmpty]; // gravity: new from top
+
+    // Build new column
+    const newColumn = column.map(cell => ({ ...cell })); // preserve blocks
+    let fi = 0;
+    for (const r of nonBlockRows) newColumn[r] = filled[fi++];
+
+    // Record fall animations for changed cells
+    const colFall = [];
+    fi = 0;
+    let newIdx = 0;
+    for (const r of nonBlockRows) {
+      const newCell = filled[newIdx++];
+      const oldCell = column[r];
+      if (oldCell.g !== newCell.g || oldCell.t !== newCell.t) {
+        // find where this cell was originally (if it was in the column)
+        const oldPos = nonEmpty.indexOf(newCell); // approximate
+        const fromR = oldPos >= 0
+          ? nonBlockRows[nonBlockRows.length - nonEmpty.length + oldPos]
+          : r - newCount; // came from above
+        colFall.push({ r, glyph: newCell, fromY: fromR * CELL, toY: r * CELL });
+      }
+      grid[r][c] = newCell;
+    }
+    // Restore blocks
+    for (const { r, cell } of blocks) grid[r][c] = cell;
+
+    fallData[c] = colFall;
+  }
+}
+
+function shiftRow(r, deltaPx) {
+  const d = ((Math.round(deltaPx / CELL) % COLS) + COLS) % COLS;
+  if (!d) return;
+  const row = grid[r];
+  grid[r] = [...row.slice(COLS - d), ...row.slice(0, COLS - d)];
+}
+
+function shiftCol(c, deltaPx) {
+  const d = ((Math.round(deltaPx / CELL) % ROWS) + ROWS) % ROWS;
+  if (!d) return;
+  const col = grid.map(row => row[c]);
+  const shifted = [...col.slice(ROWS - d), ...col.slice(0, ROWS - d)];
+  for (let r = 0; r < ROWS; r++) grid[r][c] = shifted[r];
+}
+
+function rowHasBlock(r) { return grid[r].some(c => c.t === T_BLOCK); }
+function colHasBlock(c) { return grid.some(row => row[c].t === T_BLOCK); }
+
+function countPossibleMoves() {
+  let count = 0;
+  for (let r = 0; r < ROWS; r++) {
+    if (rowHasBlock(r)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid[r].map(c => ({ ...c }));
+      shiftRow(r, dir * CELL);
+      if (findAllRuns().length > 0) count++;
+      grid[r] = saved;
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (colHasBlock(c)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid.map(row => ({ ...row[c] }));
+      shiftCol(c, dir * CELL);
+      if (findAllRuns().length > 0) count++;
+      grid.forEach((row, i) => row[c] = saved[i]);
+    }
+  }
+  return count;
+}
+
+function useHint() {
+  if (phase !== 'play') return;
+  // Build list of all valid moves (same logic as countPossibleMoves but collect them)
+  const moves = [];
+  for (let r = 0; r < ROWS; r++) {
+    if (rowHasBlock(r)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid[r].map(c => ({ ...c }));
+      shiftRow(r, dir * CELL);
+      if (findAllRuns().length > 0) moves.push({ axis: 'h', idx: r, dir });
+      grid[r] = saved;
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (colHasBlock(c)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid.map(row => ({ ...row[c] }));
+      shiftCol(c, dir * CELL);
+      if (findAllRuns().length > 0) moves.push({ axis: 'v', idx: c, dir });
+      grid.forEach((row, i) => row[c] = saved[i]);
+    }
+  }
+  if (!moves.length) return;
+  // Pick a random valid move and show it
+  hint = { ...moves[(Math.random() * moves.length) | 0], start: performance.now() };
+  // Deduct points (allow going below 0 as penalty)
+  score = Math.max(0, score - HINT_COST);
+  updateHUD();
+  showMsg('Joker! −' + HINT_COST + ' pts', 1500);
+}
+
+function drawHintArrow(x, y, angle, glow) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#f5a623';
+  ctx.shadowColor = '#f5a623';
+  ctx.shadowBlur = 6 + glow * 12;
+  ctx.beginPath();
+  ctx.moveTo(16, 0);
+  ctx.lineTo(-8, -10);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(-8, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRAWING
+// ═══════════════════════════════════════════════════════════════
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+function drawShape(cx, cy, radius, shapeId, mainCol) {
+  ctx.fillStyle = mainCol;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = mainCol;
+  ctx.shadowBlur = 10;
+
+  switch (shapeId) {
+    case 0: // circle
+      ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2); ctx.fill(); ctx.stroke(); break;
+    case 1: // square
+      { const s = radius * 0.86;
+        ctx.beginPath(); ctx.rect(cx-s, cy-s, s*2, s*2); ctx.fill(); ctx.stroke(); } break;
+    case 2: // triangle
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - radius);
+      ctx.lineTo(cx + radius*0.9, cy + radius*0.55);
+      ctx.lineTo(cx - radius*0.9, cy + radius*0.55);
+      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+    case 3: // diamond
+      ctx.beginPath();
+      ctx.moveTo(cx, cy-radius); ctx.lineTo(cx+radius*0.65, cy);
+      ctx.lineTo(cx, cy+radius); ctx.lineTo(cx-radius*0.65, cy);
+      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+    case 4: // star
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a = (Math.PI*2*i/5) - Math.PI/2;
+        const b = a + Math.PI/5;
+        if (i === 0) ctx.moveTo(cx + Math.cos(a)*radius, cy + Math.sin(a)*radius);
+        else ctx.lineTo(cx + Math.cos(a)*radius, cy + Math.sin(a)*radius);
+        ctx.lineTo(cx + Math.cos(b)*radius*0.42, cy + Math.sin(b)*radius*0.42);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawCellAt(px, py, cell, alpha = 1, scale = 1) {
+  if (!cell || cell.g === -1) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(px + CELL/2, py + CELL/2);
+  if (scale !== 1) ctx.scale(scale, scale);
+
+  if (cell.t === T_BLOCK) {
+    // Stone block
+    rr(-INNER/2, -INNER/2, INNER, INNER, 6);
+    const bg = ctx.createLinearGradient(-INNER/2, -INNER/2, INNER/2, INNER/2);
+    bg.addColorStop(0, '#4a4a6a'); bg.addColorStop(1, '#2a2a40');
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.strokeStyle = '#7777aa';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // crack lines
+    ctx.strokeStyle = '#ffffff18';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-8, -INNER/2+4); ctx.lineTo(4, 0); ctx.lineTo(-4, INNER/2-4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(INNER/2-6, -6); ctx.lineTo(0, 4); ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Tile bg
+  ctx.translate(-CELL/2, -CELL/2);
+  rr(GAP, GAP, INNER, INNER, 9);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+  const [col, glow] = COLORS[cell.g];
+  ctx.strokeStyle = col + '44';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.translate(CELL/2, CELL/2);
+
+  const r = INNER * 0.3;
+  ctx.strokeStyle = glow;
+
+  if (cell.t === T_NORMAL) {
+    drawShape(0, 0, r, SHAPES[cell.g], col);
+  }
+
+  else if (cell.t === T_LINE) {
+    // Draw shape + stripe decoration
+    drawShape(0, 0, r, SHAPES[cell.g], col);
+
+    // Stripes overlay (direction-coded)
+    const halfS = INNER/2 - GAP;
+    ctx.save();
+    ctx.globalAlpha *= 0.9;
+    if (cell.ld === 'h' || !cell.ld) {
+      // Horizontal stripe
+      for (let dy of [-r*0.35, 0, r*0.35]) {
+        const grad = ctx.createLinearGradient(-halfS, dy, halfS, dy);
+        grad.addColorStop(0, 'transparent');
+        grad.addColorStop(0.2, glow + 'ee');
+        grad.addColorStop(0.8, glow + 'ee');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(-halfS, dy - 2.5, halfS*2, 5);
+      }
+    } else {
+      // Vertical stripe
+      for (let dx of [-r*0.35, 0, r*0.35]) {
+        const grad = ctx.createLinearGradient(dx, -halfS, dx, halfS);
+        grad.addColorStop(0, 'transparent');
+        grad.addColorStop(0.2, glow + 'ee');
+        grad.addColorStop(0.8, glow + 'ee');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(dx - 2.5, -halfS, 5, halfS*2);
+      }
+    }
+    ctx.restore();
+
+    // Glow border
+    rr(-INNER/2+GAP, -INNER/2+GAP, INNER-GAP*2, INNER-GAP*2, 7);
+    ctx.strokeStyle = glow;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = glow; ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  else if (cell.t === T_BOMB) {
+    drawShape(0, 0, r * 0.75, SHAPES[cell.g], col);
+    // Radial spikes/dots
+    ctx.strokeStyle = glow;
+    ctx.shadowColor = glow; ctx.shadowBlur = 6;
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI * 2 * i) / 8;
+      const inner = r * 0.9, outer = r * 1.35;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*inner, Math.sin(a)*inner);
+      ctx.lineTo(Math.cos(a)*outer, Math.sin(a)*outer);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    // Outer glow ring
+    ctx.beginPath(); ctx.arc(0, 0, r*1.1, 0, Math.PI*2);
+    ctx.strokeStyle = glow + '88'; ctx.lineWidth = 1.5;
+    ctx.shadowColor = glow; ctx.shadowBlur = 10;
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PARTICLES
+// ═══════════════════════════════════════════════════════════════
+function burst(cx, cy, col, count = 10) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 1.5 + Math.random() * 3;
+    particles.push({
+      x: cx, y: cy, r: 3 + Math.random() * 4,
+      vx: Math.cos(a)*spd, vy: Math.sin(a)*spd - 1,
+      life: 1, col
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function easeOut(t) { return 1 - (1-t)**3; }
+function easeInOut(t) { return t < .5 ? 2*t*t : -1+(4-2*t)*t; }
+
+function render(ts) {
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid lines
+  ctx.strokeStyle = '#ffffff06'; ctx.lineWidth = 1;
+  for (let r = 1; r < ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*CELL); ctx.lineTo(W,r*CELL); ctx.stroke(); }
+  for (let c = 1; c < COLS; c++) { ctx.beginPath(); ctx.moveTo(c*CELL,0); ctx.lineTo(c*CELL,H); ctx.stroke(); }
+
+  const phaseT = phaseStart ? Math.min((ts - phaseStart) / phaseDur, 1) : 0;
+
+  // Highlight draggable / locked rows and cols
+  if (phase === 'play' && !drag.on) {
+    // subtle sheen on rows/cols without blocks
+  }
+
+  // ── draw cells ──
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const key = rc2k(r, c);
+      const cell = grid[r][c];
+
+      // skip dragged row/col
+      if (drag.on && drag.axis === 'h' && r === drag.r) continue;
+      if (drag.on && drag.axis === 'v' && c === drag.c) continue;
+
+      // skip snapping row/col
+      if (phase === 'snap' && snap.axis === 'h' && r === snap.idx) continue;
+      if (phase === 'snap' && snap.axis === 'v' && c === snap.idx) continue;
+
+      // match animation
+      if (phase === 'match' && matchCells.has(key)) {
+        const pulse = Math.sin(phaseT * Math.PI);
+        const sc = 1 + pulse * 0.4;
+        const al = Math.max(0, 1 - phaseT * 1.1);
+        drawCellAt(c*CELL, r*CELL, cell, al, sc);
+        continue;
+      }
+
+      // fall animation
+      if (phase === 'fall') {
+        const fd = fallData[c]?.find(f => f.r === r);
+        if (fd) {
+          const py = fd.fromY + (fd.toY - fd.fromY) * easeOut(phaseT);
+          ctx.save();
+          ctx.beginPath(); ctx.rect(c*CELL, 0, CELL, H); ctx.clip();
+          drawCellAt(c*CELL, py, fd.glyph);
+          ctx.restore();
+          continue;
+        }
+      }
+
+      drawCellAt(c*CELL, r*CELL, cell);
+    }
+  }
+
+  // ── drag overlay ──
+  if (drag.on && drag.axis) {
+    const off = drag.off;
+    const blocked = drag.axis === 'h' ? rowHasBlock(drag.r) : colHasBlock(drag.c);
+
+    if (!blocked) {
+      if (drag.axis === 'h') {
+        ctx.save(); ctx.beginPath(); ctx.rect(0, drag.r*CELL, W, CELL); ctx.clip();
+        ctx.fillStyle = '#ffffff0a'; ctx.fillRect(0, drag.r*CELL, W, CELL);
+        for (let c = 0; c < COLS; c++) {
+          const px = c*CELL + off;
+          for (const dx of [-W, 0, W]) drawCellAt(px+dx, drag.r*CELL, grid[drag.r][c]);
+        }
+        ctx.restore();
+      } else {
+        ctx.save(); ctx.beginPath(); ctx.rect(drag.c*CELL, 0, CELL, H); ctx.clip();
+        ctx.fillStyle = '#ffffff0a'; ctx.fillRect(drag.c*CELL, 0, CELL, H);
+        for (let r = 0; r < ROWS; r++) {
+          const py = r*CELL + off;
+          for (const dy of [-H, 0, H]) drawCellAt(drag.c*CELL, py+dy, grid[r][drag.c]);
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  // ── snap anim ──
+  if (phase === 'snap') {
+    const off = snap.from + (snap.to - snap.from) * easeInOut(phaseT);
+    if (snap.axis === 'h') {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, snap.idx*CELL, W, CELL); ctx.clip();
+      for (let c = 0; c < COLS; c++) {
+        const px = c*CELL + off;
+        for (const dx of [-W,0,W]) drawCellAt(px+dx, snap.idx*CELL, grid[snap.idx][c]);
+      }
+      if (snapRejected) { ctx.fillStyle = '#e74c3c33'; ctx.fillRect(0, snap.idx*CELL, W, CELL); }
+      ctx.restore();
+    } else {
+      ctx.save(); ctx.beginPath(); ctx.rect(snap.idx*CELL, 0, CELL, H); ctx.clip();
+      for (let r = 0; r < ROWS; r++) {
+        const py = r*CELL + off;
+        for (const dy of [-H,0,H]) drawCellAt(snap.idx*CELL, py+dy, grid[r][snap.idx]);
+      }
+      if (snapRejected) { ctx.fillStyle = '#e74c3c33'; ctx.fillRect(snap.idx*CELL, 0, CELL, H); }
+      ctx.restore();
+    }
+  }
+
+  // ── shake for blocked drag ──
+  if (shake.on) {
+    const st = Math.min((ts - shake.t) / 400, 1);
+    const sx = Math.sin(st * Math.PI * 6) * (1 - st) * 6;
+    if (shake.axis === 'h') {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, shake.idx*CELL, W, CELL); ctx.clip();
+      ctx.fillStyle = '#e74c3c22'; ctx.fillRect(0, shake.idx*CELL, W, CELL);
+      for (let c = 0; c < COLS; c++) drawCellAt(c*CELL + sx, shake.idx*CELL, grid[shake.idx][c]);
+      ctx.restore();
+    } else {
+      ctx.save(); ctx.beginPath(); ctx.rect(shake.idx*CELL, 0, CELL, H); ctx.clip();
+      ctx.fillStyle = '#e74c3c22'; ctx.fillRect(shake.idx*CELL, 0, CELL, H);
+      for (let r = 0; r < ROWS; r++) drawCellAt(shake.idx*CELL + sx, r*CELL, grid[r][shake.idx]);
+      ctx.restore();
+    }
+    if (st >= 1) shake.on = false;
+  }
+
+  // ── locked-row/col tint ──
+  for (let r = 0; r < ROWS; r++) {
+    if (rowHasBlock(r)) {
+      ctx.fillStyle = '#e74c3c08';
+      ctx.fillRect(0, r*CELL, W, CELL);
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (colHasBlock(c)) {
+      ctx.fillStyle = '#e74c3c08';
+      ctx.fillRect(c*CELL, 0, CELL, H);
+    }
+  }
+
+  // ── hint overlay ──
+  if (hint) {
+    const age   = (performance.now() - hint.start) / 1000;
+    if (age > 6) {
+      hint = null;
+    } else {
+      const pulse  = 0.5 + 0.5 * Math.sin(age * 6);
+      const bounce = Math.sin(age * 7) * 6;
+      const fade   = Math.max(0, 1 - age / 6);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      if (hint.axis === 'h') {
+        const ry = hint.idx * CELL;
+        ctx.fillStyle = '#f5a62314';
+        ctx.fillRect(0, ry, W, CELL);
+        ctx.strokeStyle = `rgba(245,166,35,${0.35 + pulse * 0.65})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#f5a623'; ctx.shadowBlur = 10;
+        ctx.strokeRect(2, ry + 2, W - 4, CELL - 4);
+        ctx.shadowBlur = 0;
+        // Arrow at the "push" side, bouncing toward direction
+        const ax = hint.dir > 0 ? CELL * 0.5 + bounce : W - CELL * 0.5 - bounce;
+        drawHintArrow(ax, ry + CELL / 2, hint.dir > 0 ? 0 : Math.PI, pulse);
+      } else {
+        const cx = hint.idx * CELL;
+        ctx.fillStyle = '#f5a62314';
+        ctx.fillRect(cx, 0, CELL, H);
+        ctx.strokeStyle = `rgba(245,166,35,${0.35 + pulse * 0.65})`;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#f5a623'; ctx.shadowBlur = 10;
+        ctx.strokeRect(cx + 2, 2, CELL - 4, H - 4);
+        ctx.shadowBlur = 0;
+        const ay = hint.dir > 0 ? CELL * 0.5 + bounce : H - CELL * 0.5 - bounce;
+        drawHintArrow(cx + CELL / 2, ay, hint.dir > 0 ? Math.PI / 2 : -Math.PI / 2, pulse);
+      }
+      ctx.restore();
+    }
+  }
+
+  // ── particles ──
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.col;
+    ctx.shadowColor = p.col; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+  // ── bonus time popup ──
+  if (bonusPopup) {
+    ctx.save();
+    ctx.globalAlpha = bonusPopup.life;
+    ctx.font = 'bold 28px Segoe UI';
+    ctx.fillStyle = '#2ecc71';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#2ecc71'; ctx.shadowBlur = 15;
+    ctx.fillText(bonusPopup.text, bonusPopup.x, bonusPopup.y);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    bonusPopup.y -= 0.8;
+    bonusPopup.life -= 0.015;
+    if (bonusPopup.life <= 0) bonusPopup = null;
+  }
+
+  // ── game over dim ──
+  if (phase === 'gameover') {
+    ctx.fillStyle = '#0d0d1a88';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PHASE TRANSITIONS
+// ═══════════════════════════════════════════════════════════════
+function afterSnap() {
+  if (snapRejected) {
+    snapRejected = false;
+    phase = 'play'; phaseStart = null;
+    return;
+  }
+  if (resolveMatches()) {
+    phase = 'match';
+    phaseDur = 480;
+    phaseStart = performance.now();
+  } else {
+    combo = 1;
+    showCombo(0);
+    updateHUD();
+    phase = 'play';
+    phaseStart = null;
+  }
+}
+
+function afterMatch() {
+  applyMatchWithParticles();
+  buildFallData();
+  const hasFall = fallData.some(col => col.length > 0);
+  if (hasFall) {
+    phase = 'fall';
+    phaseDur = 360;
+    phaseStart = performance.now();
+  } else {
+    afterFall();
+  }
+}
+
+function afterFall() {
+  if (resolveMatches()) {
+    phase = 'match';
+    phaseDur = 480;
+    phaseStart = performance.now();
+  } else {
+    combo = 1;
+    showCombo(0);
+    updateHUD();
+    possibleMoves = countPossibleMoves();
+    if (possibleMoves === 0) {
+      triggerGameOver();
+      return;
+    }
+    phase = 'play';
+    phaseStart = null;
+    checkLevelUp();
+  }
+}
+
+function checkLevelUp() {
+  if (level > MAX_LEVEL) return;
+  const ld = LEVEL_DATA[level - 1];
+  if (score >= ld.target) {
+    level++;
+    // Add exactly 1 block per level so total = level - 1
+    placeBlocks(1);
+    showMsg('LEVEL ' + level + '!', 2000);
+    updateHUD();
+  }
+}
+
+function triggerGameOver() {
+  phase = 'gameover';
+  if (score > best) { best = score; localStorage.setItem('linefall_best', best); }
+  showOverlay(
+    'GAME OVER',
+    'Level ' + level + ' reached',
+    'Score: ' + score.toLocaleString(),
+    'Best: ' + best.toLocaleString()
+  );
+  ovBtn.textContent = 'PLAY AGAIN';
+  ovBtn.onclick = newGame;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════════════════════════
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src  = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * (W / rect.width),
+    y: (src.clientY - rect.top)  * (H / rect.height),
+  };
+}
+
+function onDown(e) {
+  if (phase !== 'play') return;
+  e.preventDefault();
+  const { x, y } = getPos(e);
+  drag = { on:true, r:(y/CELL)|0, c:(x/CELL)|0, axis:null, ox:x, oy:y, off:0 };
+  hint = null; // dismiss hint when player acts
+  canvas.classList.add('dragging');
+}
+
+function onMove(e) {
+  if (!drag.on) return;
+  e.preventDefault();
+  const { x, y } = getPos(e);
+  const dx = x - drag.ox, dy = y - drag.oy;
+
+  if (!drag.axis) {
+    if (Math.abs(dx) > 7 || Math.abs(dy) > 7) {
+      drag.axis = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+
+      // Check if this row/col is blocked immediately
+      const isBlocked = drag.axis === 'h' ? rowHasBlock(drag.r) : colHasBlock(drag.c);
+      if (isBlocked) {
+        const idx = drag.axis === 'h' ? drag.r : drag.c;
+        shake = { on:true, axis:drag.axis, idx, t:performance.now() };
+        drag.on = false;
+        canvas.classList.remove('dragging');
+        return;
+      }
+    }
+    return;
+  }
+  // Cap to exactly 1 cell in either direction
+  const raw = drag.axis === 'h' ? dx : dy;
+  drag.off = Math.max(-CELL, Math.min(CELL, raw));
+}
+
+function onUp(e) {
+  if (!drag.on) return;
+  canvas.classList.remove('dragging');
+
+  if (!drag.axis || Math.abs(drag.off) < 5) { drag.on = false; return; }
+
+  const { axis, r: row, c: col, off } = drag;
+  drag.on = false;
+
+  const cellsMoved = Math.round(off / CELL);
+  const idx = axis === 'h' ? row : col;
+
+  if (cellsMoved === 0) {
+    // Didn't reach half a cell — just snap back
+    snap = { axis, idx, from: off, to: 0 };
+    snapRejected = true;
+    phase = 'snap'; phaseDur = 160; phaseStart = performance.now();
+    return;
+  }
+
+  // Save grid state, apply shift, validate
+  let saved;
+  if (axis === 'h') {
+    saved = grid[row].map(c => ({ ...c }));
+    shiftRow(row, off);
+  } else {
+    saved = grid.map(r => ({ ...r[col] }));
+    shiftCol(col, off);
+  }
+
+  if (findAllRuns().length === 0) {
+    // No match — restore and reject
+    if (axis === 'h') grid[row] = saved;
+    else grid.forEach((r, i) => r[col] = saved[i]);
+    snap = { axis, idx, from: off, to: 0 };
+    snapRejected = true;
+    showMsg('No match!', 900);
+    phase = 'snap'; phaseDur = 220; phaseStart = performance.now();
+    return;
+  }
+
+  snapRejected = false;
+  const residual = off - cellsMoved * CELL;
+  snap = { axis, idx, from: residual, to: 0 };
+  phase = 'snap'; phaseDur = 160; phaseStart = performance.now();
+}
+
+canvas.addEventListener('mousedown',  onDown);
+canvas.addEventListener('mousemove',  onMove);
+window.addEventListener('mouseup',    onUp);
+canvas.addEventListener('touchstart', onDown, { passive:false });
+canvas.addEventListener('touchmove',  onMove, { passive:false });
+canvas.addEventListener('touchend',   onUp,   { passive:false });
+
+ovBtn.addEventListener('click', newGame);
+const hintBtn = document.getElementById('hintBtn');
+hintBtn.addEventListener('click', useHint);
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════
+function loop(ts) {
+  requestAnimationFrame(loop);
+
+  // Hint button state
+  hintBtn.disabled = (phase !== 'play');
+
+  // Timer
+  if (phase === 'play' || phase === 'snap' || phase === 'match' || phase === 'fall') {
+    if (lastTime !== null) {
+      const dt = Math.min((ts - lastTime) / 1000, 0.1);
+      timeLeft = Math.max(0, timeLeft - dt);
+      if (timeLeft <= 0) { triggerGameOver(); }
+      else updateHUD();
+    }
+    lastTime = ts;
+  }
+
+  // Phase transitions
+  if (phaseStart !== null) {
+    const t = (ts - phaseStart) / phaseDur;
+    if (t >= 1) {
+      phaseStart = null;
+      if      (phase === 'snap')  afterSnap();
+      else if (phase === 'match') afterMatch();
+      else if (phase === 'fall')  afterFall();
+    }
+  }
+
+  // Particles
+  particles = particles.filter(p => p.life > 0.01);
+  for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life -= 0.022; }
+
+  render(ts);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════════
+newGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
