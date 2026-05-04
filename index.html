@@ -744,41 +744,88 @@ function rr(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawShape(cx, cy, radius, shapeId, mainCol) {
+function drawShape(cx, cy, r, shapeId, mainCol) {
   ctx.fillStyle = mainCol;
   ctx.lineWidth = 2;
   ctx.shadowColor = mainCol;
   ctx.shadowBlur = 10;
 
   switch (shapeId) {
-    case 0: // circle
-      ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2); ctx.fill(); ctx.stroke(); break;
-    case 1: // square
-      { const s = radius * 0.86;
-        ctx.beginPath(); ctx.rect(cx-s, cy-s, s*2, s*2); ctx.fill(); ctx.stroke(); } break;
-    case 2: // triangle
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - radius);
-      ctx.lineTo(cx + radius*0.9, cy + radius*0.55);
-      ctx.lineTo(cx - radius*0.9, cy + radius*0.55);
-      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
-    case 3: // diamond
-      ctx.beginPath();
-      ctx.moveTo(cx, cy-radius); ctx.lineTo(cx+radius*0.65, cy);
-      ctx.lineTo(cx, cy+radius); ctx.lineTo(cx-radius*0.65, cy);
-      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
-    case 4: // star
-      ctx.beginPath();
-      for (let i = 0; i < 5; i++) {
-        const a = (Math.PI*2*i/5) - Math.PI/2;
-        const b = a + Math.PI/5;
-        if (i === 0) ctx.moveTo(cx + Math.cos(a)*radius, cy + Math.sin(a)*radius);
-        else ctx.lineTo(cx + Math.cos(a)*radius, cy + Math.sin(a)*radius);
-        ctx.lineTo(cx + Math.cos(b)*radius*0.42, cy + Math.sin(b)*radius*0.42);
+
+    case 0: { // KIN — Mayan sun cross: 4 pointed petals + centre circle
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.quadraticCurveTo(
+          cx + Math.cos(a - 0.52) * r * 0.62, cy + Math.sin(a - 0.52) * r * 0.62,
+          cx + Math.cos(a) * r,                cy + Math.sin(a) * r
+        );
+        ctx.quadraticCurveTo(
+          cx + Math.cos(a + 0.52) * r * 0.62, cy + Math.sin(a + 0.52) * r * 0.62,
+          cx, cy
+        );
+        ctx.fill(); ctx.stroke();
       }
-      ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      break;
+    }
+
+    case 1: { // AHAU — lord glyph: filled circle with dark T-cross inside
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#16213e';
+      // Horizontal bar
+      ctx.beginPath(); ctx.rect(cx - r * 0.68, cy - r * 0.62, r * 1.36, r * 0.30); ctx.fill();
+      // Vertical bar
+      ctx.beginPath(); ctx.rect(cx - r * 0.17, cy - r * 0.32, r * 0.34, r * 0.88); ctx.fill();
+      break;
+    }
+
+    case 2: { // CAUAC — storm glyph: 3 dots in triangle (Mayan rain symbol)
+      const dr = r * 0.30;
+      for (const [x, y] of [
+        [cx,           cy - r * 0.52],
+        [cx - r * 0.52, cy + r * 0.36],
+        [cx + r * 0.52, cy + r * 0.36],
+      ]) {
+        ctx.beginPath(); ctx.arc(x, y, dr, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+      }
+      break;
+    }
+
+    case 3: { // CHICCHAN — serpent glyph: S-curve with head/tail dots
+      ctx.lineCap = 'round';
+      ctx.lineWidth = r * 0.27;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.82);
+      ctx.bezierCurveTo(cx + r * 0.9, cy - r * 0.82, cx + r * 0.9, cy, cx, cy);
+      ctx.bezierCurveTo(cx - r * 0.9, cy, cx - r * 0.9, cy + r * 0.82, cx, cy + r * 0.82);
+      ctx.stroke();
+      ctx.lineWidth = 2; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.arc(cx, cy - r * 0.82, r * 0.20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy + r * 0.82, r * 0.20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      break;
+    }
+
+    case 4: { // CABAN — earth/pyramid glyph: 3 stacked stepped tiers
+      const stepH = r * 0.56;
+      const topY  = cy - (3 * stepH) / 2;
+      for (let s = 0; s < 3; s++) {
+        const w = r * 2 * (1 - s * 0.28);
+        ctx.beginPath();
+        ctx.rect(cx - w / 2, topY + s * stepH, w, stepH - 2);
+        ctx.fill(); ctx.stroke();
+      }
+      break;
+    }
   }
   ctx.shadowBlur = 0;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'butt';
 }
 
 function drawCellAt(px, py, cell, alpha = 1, scale = 1) {
