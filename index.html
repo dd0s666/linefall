@@ -171,6 +171,40 @@ canvas.dragging { cursor: grabbing; }
   transition: background 0.2s, color 0.2s;
 }
 .ov-btn:hover { background: #f5a623; color: #0d0d1a; }
+.ov-btn.secondary { color: #aaa; border-color: #555; margin-top: 10px; }
+.ov-btn.secondary:hover { background: #555; color: #fff; }
+
+/* ── Mode select overlay ── */
+#modeOverlay {
+  position: fixed; inset: 0;
+  background: #0d0d1acc;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+#modeOverlay.show { opacity: 1; pointer-events: all; }
+#modeBox {
+  background: #16213e;
+  border: 2px solid #f5a623;
+  border-radius: 16px;
+  padding: 30px 40px;
+  text-align: center;
+  max-width: 320px;
+  width: 90vw;
+  box-shadow: 0 0 60px #f5a62344;
+}
+#modeBox .mode-btn {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+}
+#modeTitle { font-size: 2rem; font-weight: bold; color: #f5a623; margin-bottom: 8px; }
+#modeBody  { font-size: 1rem; color: #aaa; margin-bottom: 6px; line-height: 1.6; }
+
+/* ── Turn highlight ── */
+.hud-box.active-turn { border-color: #f5a623; box-shadow: 0 0 10px #f5a62366; }
 </style>
 </head>
 <body>
@@ -181,19 +215,19 @@ canvas.dragging { cursor: grabbing; }
     <div class="hud-val" id="levelVal">1</div>
   </div>
   <div class="hud-box" id="timerBox">
-    <div class="hud-label">Time</div>
+    <div class="hud-label" id="timerLabel">Time</div>
     <div class="hud-val" id="timerVal">5:00</div>
   </div>
   <div class="hud-box">
     <div class="hud-label">Moves</div>
     <div class="hud-val" id="movesVal">20</div>
   </div>
-  <div class="hud-box">
-    <div class="hud-label">Score</div>
+  <div class="hud-box" id="scoreBox">
+    <div class="hud-label" id="scoreLabel">Score</div>
     <div class="hud-val" id="scoreVal">0</div>
   </div>
-  <div class="hud-box">
-    <div class="hud-label">Best</div>
+  <div class="hud-box" id="bestBox">
+    <div class="hud-label" id="bestLabel">Best</div>
     <div class="hud-val" id="bestVal">0</div>
   </div>
 </div>
@@ -218,6 +252,17 @@ canvas.dragging { cursor: grabbing; }
     <div id="overlayScore"></div>
     <div id="overlayBest"></div>
     <button class="ov-btn" id="overlayBtn">PLAY AGAIN</button>
+    <button class="ov-btn secondary" id="overlayMenuBtn">CHANGE MODE</button>
+  </div>
+</div>
+
+<div id="modeOverlay" class="show">
+  <div id="modeBox">
+    <div id="modeTitle">LINEFALL</div>
+    <div id="modeBody">Choose a mode</div>
+    <button class="ov-btn mode-btn" id="modeTimeBtn" data-mode="time">VS TIME</button>
+    <button class="ov-btn mode-btn" id="modeFriendBtn" data-mode="friend">2 PLAYERS — VS FRIEND</button>
+    <button class="ov-btn mode-btn" id="modeMachineBtn" data-mode="machine">2 PLAYERS — VS MACHINE</button>
   </div>
 </div>
 
@@ -268,8 +313,11 @@ canvas.width = W; canvas.height = H;
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let grid;        // [ROWS][COLS] → {g, t, ld} or null
-let score, best, combo, level, timeLeft, possibleMoves;
-let phase;       // 'play'|'snap'|'match'|'fall'|'gameover'
+let mode = 'time';       // 'time' | 'friend' | 'machine'
+let scores = [0];        // scores[0] = player 1, scores[1] = player 2 / machine
+let curPlayer = 0;       // whose turn it is (2-player modes only)
+let best, combo, level, timeLeft, possibleMoves;
+let phase;       // 'menu'|'play'|'thinking'|'snap'|'match'|'fall'|'gameover'
 let phaseStart, phaseDur;
 let lastTime;    // for timer delta
 let snapRejected = false; // true when a snap-back is due to no match
@@ -309,9 +357,14 @@ const inBounds = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS;
 // ═══════════════════════════════════════════════════════════════
 const levelEl    = document.getElementById('levelVal');
 const timerEl    = document.getElementById('timerVal');
+const timerLabelEl = document.getElementById('timerLabel');
 const movesEl    = document.getElementById('movesVal');
 const scoreEl    = document.getElementById('scoreVal');
+const scoreLabelEl = document.getElementById('scoreLabel');
+const scoreBoxEl = document.getElementById('scoreBox');
 const bestEl     = document.getElementById('bestVal');
+const bestLabelEl = document.getElementById('bestLabel');
+const bestBoxEl  = document.getElementById('bestBox');
 const progressEl = document.getElementById('progressBar');
 const comboBar   = document.getElementById('comboBar');
 const comboNumEl = document.getElementById('comboNum');
@@ -322,27 +375,53 @@ const ovBody     = document.getElementById('overlayBody');
 const ovScore    = document.getElementById('overlayScore');
 const ovBest     = document.getElementById('overlayBest');
 const ovBtn      = document.getElementById('overlayBtn');
+const ovMenuBtn  = document.getElementById('overlayMenuBtn');
+const modeOverlay = document.getElementById('modeOverlay');
 
 let msgTimer = null, comboTimer = null;
 
+function totalScore() { return scores.reduce((a, b) => a + b, 0); }
+
 function updateHUD() {
   levelEl.textContent = level;
-  scoreEl.textContent = score.toLocaleString();
-  bestEl.textContent  = best.toLocaleString();
+  const total = totalScore();
   const ld = LEVEL_DATA[Math.min(level - 1, MAX_LEVEL - 1)];
   const prev = level > 1 ? LEVEL_DATA[level-2].target : 0;
-  const pct = Math.min(100, ((score - prev) / (ld.target - prev)) * 100);
+  const pct = Math.min(100, ((total - prev) / (ld.target - prev)) * 100);
   progressEl.style.width = Math.max(0, pct) + '%';
 
-  const display = Math.ceil(timeLeft);
-  const m = (display / 60) | 0;
-  const s = display % 60;
-  timerEl.textContent = m + ':' + String(s).padStart(2, '0');
-  timerEl.classList.toggle('warn',   timeLeft <= 60 && timeLeft > 20);
-  timerEl.classList.toggle('danger', timeLeft <= 20);
   movesEl.textContent = possibleMoves;
   movesEl.classList.toggle('warn',   possibleMoves <= 5 && possibleMoves > 2);
   movesEl.classList.toggle('danger', possibleMoves <= 2);
+
+  if (mode === 'time') {
+    timerLabelEl.textContent = 'Time';
+    const display = Math.ceil(timeLeft);
+    const m = (display / 60) | 0;
+    const s = display % 60;
+    timerEl.textContent = m + ':' + String(s).padStart(2, '0');
+    timerEl.classList.toggle('warn',   timeLeft <= 60 && timeLeft > 20);
+    timerEl.classList.toggle('danger', timeLeft <= 20);
+
+    scoreLabelEl.textContent = 'Score';
+    bestLabelEl.textContent = 'Best';
+    scoreEl.textContent = scores[0].toLocaleString();
+    bestEl.textContent  = best.toLocaleString();
+    scoreBoxEl.classList.remove('active-turn');
+    bestBoxEl.classList.remove('active-turn');
+  } else {
+    const p2Name = mode === 'machine' ? 'CPU' : 'P2';
+    timerLabelEl.textContent = 'Turn';
+    timerEl.classList.remove('warn', 'danger');
+    timerEl.textContent = curPlayer === 0 ? 'P1' : p2Name;
+
+    scoreLabelEl.textContent = 'P1';
+    bestLabelEl.textContent = p2Name;
+    scoreEl.textContent = scores[0].toLocaleString();
+    bestEl.textContent  = (scores[1] || 0).toLocaleString();
+    scoreBoxEl.classList.toggle('active-turn', curPlayer === 0);
+    bestBoxEl.classList.toggle('active-turn', curPlayer === 1);
+  }
 }
 
 function showMsg(text, dur = 1400) {
@@ -373,17 +452,39 @@ function hideOverlay() { overlay.classList.remove('show'); }
 // ═══════════════════════════════════════════════════════════════
 // GRID INIT
 // ═══════════════════════════════════════════════════════════════
-function newGame() {
+function newGame(m) {
+  if (m) mode = m;
   best = parseInt(localStorage.getItem('linefall_best') || '0');
-  score = 0; combo = 1; level = 1; timeLeft = TOTAL_TIME; possibleMoves = 0;
+  scores = mode === 'time' ? [0] : [0, 0];
+  curPlayer = 0;
+  combo = 1; level = 1; timeLeft = TOTAL_TIME; possibleMoves = 0;
   hint = null;
   lastTime = null;
   phase = 'play'; phaseStart = null; particles = [];
   drag.on = false;
   hideOverlay();
+  modeOverlay.classList.remove('show');
   buildLevel();
   possibleMoves = countPossibleMoves();
   updateHUD();
+}
+
+// Builds a board to show behind the mode-select screen, without starting play.
+function initBackdrop() {
+  best = parseInt(localStorage.getItem('linefall_best') || '0');
+  scores = [0];
+  curPlayer = 0; combo = 1; level = 1; timeLeft = TOTAL_TIME; possibleMoves = 0;
+  hint = null; lastTime = null; particles = [];
+  drag.on = false;
+  buildLevel();
+  phase = 'menu'; phaseStart = null;
+  updateHUD();
+}
+
+function showModeSelect() {
+  hideOverlay();
+  initBackdrop();
+  modeOverlay.classList.add('show');
 }
 
 function buildLevel() {
@@ -546,8 +647,8 @@ function resolveMatches() {
   // Scoring
   const matchCount = [...toDestroy].filter(k => grid[k2r(k)][k2c(k)].t !== T_BLOCK).length;
   const pts = matchCount * 100 * combo;
-  score += pts;
-  if (score > best) { best = score; localStorage.setItem('linefall_best', best); }
+  scores[curPlayer] += pts;
+  if (mode === 'time' && scores[0] > best) { best = scores[0]; localStorage.setItem('linefall_best', best); }
   combo++;
   showCombo(combo - 1);
 
@@ -707,8 +808,8 @@ function useHint() {
   if (!moves.length) return;
   // Pick a random valid move and show it
   hint = { ...moves[(Math.random() * moves.length) | 0], start: performance.now() };
-  // Deduct points (allow going below 0 as penalty)
-  score = Math.max(0, score - HINT_COST);
+  // Deduct points from the active player (allow going below 0 as penalty)
+  scores[curPlayer] = Math.max(0, scores[curPlayer] - HINT_COST);
   updateHUD();
   showMsg('Joker! −' + HINT_COST + ' pts', 1500);
 }
@@ -1219,13 +1320,23 @@ function afterFall() {
     phase = 'play';
     phaseStart = null;
     checkLevelUp();
+
+    if (mode !== 'time') {
+      curPlayer = 1 - curPlayer;
+      updateHUD();
+      if (mode === 'machine' && curPlayer === 1) {
+        phase = 'thinking';
+        showMsg('Machine thinking…', 700);
+        setTimeout(() => { if (phase === 'thinking') machineMove(); }, 700);
+      }
+    }
   }
 }
 
 function checkLevelUp() {
   if (level > MAX_LEVEL) return;
   const ld = LEVEL_DATA[level - 1];
-  if (score >= ld.target) {
+  if (totalScore() >= ld.target) {
     level++;
     // Add exactly 1 block per level so total = level - 1
     placeBlocks(1);
@@ -1234,17 +1345,79 @@ function checkLevelUp() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MACHINE PLAYER (2-player "vs machine" mode)
+// ═══════════════════════════════════════════════════════════════
+function machineMove() {
+  const moves = [];
+  for (let r = 0; r < ROWS; r++) {
+    if (rowHasBlock(r)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid[r].map(c => ({ ...c }));
+      shiftRow(r, dir * CELL);
+      const runs = findAllRuns();
+      if (runs.length) {
+        const cells = new Set();
+        runs.forEach(run => run.cells.forEach(k => cells.add(k)));
+        moves.push({ axis: 'h', idx: r, dir, weight: cells.size });
+      }
+      grid[r] = saved;
+    }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (colHasBlock(c)) continue;
+    for (const dir of [1, -1]) {
+      const saved = grid.map(row => ({ ...row[c] }));
+      shiftCol(c, dir * CELL);
+      const runs = findAllRuns();
+      if (runs.length) {
+        const cells = new Set();
+        runs.forEach(run => run.cells.forEach(k => cells.add(k)));
+        moves.push({ axis: 'v', idx: c, dir, weight: cells.size });
+      }
+      grid.forEach((row, i) => row[c] = saved[i]);
+    }
+  }
+  if (!moves.length) return; // shouldn't happen — possibleMoves was > 0
+
+  const bestWeight = Math.max(...moves.map(m => m.weight));
+  const top = moves.filter(m => m.weight === bestWeight);
+  const choice = top[(Math.random() * top.length) | 0];
+
+  if (choice.axis === 'h') shiftRow(choice.idx, choice.dir * CELL);
+  else shiftCol(choice.idx, choice.dir * CELL);
+
+  snapRejected = false;
+  snap = { axis: choice.axis, idx: choice.idx, from: -choice.dir * CELL, to: 0 };
+  phase = 'snap'; phaseDur = 220; phaseStart = performance.now();
+}
+
 function triggerGameOver() {
   phase = 'gameover';
-  if (score > best) { best = score; localStorage.setItem('linefall_best', best); }
-  showOverlay(
-    'GAME OVER',
-    'Level ' + level + ' reached',
-    'Score: ' + score.toLocaleString(),
-    'Best: ' + best.toLocaleString()
-  );
+  if (mode === 'time') {
+    if (scores[0] > best) { best = scores[0]; localStorage.setItem('linefall_best', best); }
+    showOverlay(
+      'GAME OVER',
+      'Level ' + level + ' reached',
+      'Score: ' + scores[0].toLocaleString(),
+      'Best: ' + best.toLocaleString()
+    );
+  } else {
+    const [s1, s2] = scores;
+    const p2Label = mode === 'machine' ? 'Machine' : 'Player 2';
+    let title;
+    if (s1 === s2) title = 'DRAW!';
+    else if (s1 > s2) title = mode === 'machine' ? 'YOU WIN!' : 'PLAYER 1 WINS!';
+    else title = mode === 'machine' ? 'MACHINE WINS!' : 'PLAYER 2 WINS!';
+    showOverlay(
+      title,
+      'Level ' + level + ' reached',
+      'Player 1: ' + s1.toLocaleString(),
+      p2Label + ': ' + s2.toLocaleString()
+    );
+  }
   ovBtn.textContent = 'PLAY AGAIN';
-  ovBtn.onclick = newGame;
+  ovBtn.onclick = () => newGame();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1349,9 +1522,13 @@ canvas.addEventListener('touchstart', onDown, { passive:false });
 canvas.addEventListener('touchmove',  onMove, { passive:false });
 canvas.addEventListener('touchend',   onUp,   { passive:false });
 
-ovBtn.addEventListener('click', newGame);
+ovMenuBtn.addEventListener('click', showModeSelect);
 const hintBtn = document.getElementById('hintBtn');
 hintBtn.addEventListener('click', useHint);
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => newGame(btn.dataset.mode));
+});
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN LOOP
@@ -1362,8 +1539,8 @@ function loop(ts) {
   // Hint button state
   hintBtn.disabled = (phase !== 'play');
 
-  // Timer
-  if (phase === 'play' || phase === 'snap' || phase === 'match' || phase === 'fall') {
+  // Timer (only ticks in "vs time" solo mode)
+  if (mode === 'time' && (phase === 'play' || phase === 'snap' || phase === 'match' || phase === 'fall')) {
     if (lastTime !== null) {
       const dt = Math.min((ts - lastTime) / 1000, 0.1);
       timeLeft = Math.max(0, timeLeft - dt);
@@ -1394,7 +1571,7 @@ function loop(ts) {
 // ═══════════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════════
-newGame();
+initBackdrop();
 requestAnimationFrame(loop);
 </script>
 </body>
